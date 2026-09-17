@@ -1,0 +1,11 @@
+import {h,num,won,request} from './shared.js';
+document.getElementById('print').addEventListener('click',()=>window.print());
+async function load(){
+ const id=Number(new URLSearchParams(location.search).get('id'));
+ const [sale,state]=await Promise.all([request(`/api/sale/${id}`),request('/api/state')]);
+ if(sale.kind!=='sale')throw Error('상품 판매 거래만 명세서를 출력할 수 있습니다.');
+ const b=state.settings;
+ document.title=`${sale.number} 거래명세서`;
+ document.getElementById('statement').innerHTML=`${state.demo?'<p class="negative">체험용 가상 거래명세서</p>':''}<header class="print-title"><div><div class="eyebrow">ATHENA / TRANSACTION STATEMENT</div><h1>거래명세서</h1></div><div class="right"><b>${h(sale.day)}</b><span class="subtext">${h(sale.number)}</span></div></header><section class="print-top"><div><p class="eyebrow">공급받는 곳</p><h2 style="font-size:21px;margin:8px 0">${h(sale.partner_name)} 귀하</h2><p class="muted" style="font-size:12px">${h(sale.partner.phone)}<br>${h(sale.partner.address)}</p></div><div><p class="eyebrow">공급하는 곳</p><dl class="definition"><dt>사업장</dt><dd><b>${h(b.business)}</b></dd><dt>대표 / 담당자</dt><dd>${h(b.owner||'—')}</dd><dt>전화</dt><dd>${h(b.phone||'—')}</dd><dt>주소</dt><dd>${h(b.address||'—')}</dd></dl></div></section><table><thead><tr><th>품목 / 규격</th><th class="right">판매 수량</th><th class="right">반품 수량</th><th class="right">단가</th><th class="right">현재 금액</th></tr></thead><tbody>${sale.lines.map(l=>`<tr><td><b>${h(l.product_name)}</b><span class="subtext">${h(l.spec)}</span></td><td class="right">${num(l.qty)} ${h(l.unit)}</td><td class="right">${num(l.returned_qty)}</td><td class="right">${num(l.price)}</td><td class="right">${num((l.qty-l.returned_qty)*l.price)}</td></tr>`).join('')}</tbody></table><div class="print-total"><dl><dt>최초 판매금액</dt><dd>${won(sale.total)}</dd><dt>반품금액</dt><dd>−${won(sale.returned)}</dd><dt>현재 거래금액</dt><dd>${won(sale.net)}</dd><dt>순입금액</dt><dd>${won(sale.paid)}</dd><dt class="grand">미수금</dt><dd class="grand">${won(sale.balance)}</dd></dl></div>${sale.note?`<p class="detail-note">메모: ${h(sale.note)}</p>`:''}<div class="print-foot">출력일 ${h(state.today)} · 반품과 입금을 반영한 현재 정산 내역입니다.<br>입력된 최종 거래금액 기준이며, 세금계산서가 아닙니다.</div>`;
+}
+load().catch(error=>{document.getElementById('statement').textContent=error.message;document.getElementById('print').disabled=true;});
