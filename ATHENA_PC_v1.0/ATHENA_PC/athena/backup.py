@@ -48,6 +48,11 @@ def verify(conn):
         raise UserError('백업의 반품 금액이 일치하지 않습니다.')
     if conn.execute(f'SELECT 1 FROM ({db.SALES_QUERY}) WHERE paid<0 OR balance<0 OR net<0').fetchone():
         raise UserError('백업의 입금·미수금 합계가 올바르지 않습니다.')
+    if conn.execute("""SELECT 1 FROM orders o WHERE
+        NOT EXISTS (SELECT 1 FROM order_lines l WHERE l.order_id=o.id)
+        OR (SELECT COUNT(*) FROM order_lines l WHERE l.order_id=o.id)>100
+        OR total!=(SELECT SUM(qty*price) FROM order_lines l WHERE l.order_id=o.id)""").fetchone():
+        raise UserError('백업의 주문 품목 또는 합계가 올바르지 않습니다.')
     # Verify ledger effects, not only the displayed totals.
     if conn.execute("""SELECT 1 FROM sale_lines l WHERE l.qty != -COALESCE((SELECT SUM(m.qty) FROM movements m
         WHERE m.kind='sale' AND m.sale_id=l.sale_id AND m.product_id=l.product_id),0)""").fetchone():

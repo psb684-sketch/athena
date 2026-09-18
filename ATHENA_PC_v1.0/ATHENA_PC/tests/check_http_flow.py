@@ -62,11 +62,22 @@ def main():
 
             state=get('/api/state');assert state['products']==[] and state['partners']==[]
             today=state['today'];checkpoints.append('Empty first launch with no sample business data')
-            for asset in ['/','/app.js','/forms.js','/shared.js','/style.css','/statement.html','/statement.js','/favicon.svg']:
+            for asset in ['/','/app.js','/forms.js','/orders.js','/shared.js','/style.css','/statement.html','/statement.js','/favicon.svg']:
                 assert get(asset,True)
             checkpoints.append('All HTML/CSS/JS and statement assets served through authenticated HTTP')
             product=post('products',{'name':'HTTP 검증 품목','price':10000,'opening_stock':10})['id']
             partner=post('partners',{'name':'HTTP 검증 거래처'})['id']
+            order_data={'partner_id':partner,'day':today,'lines':[{'product_id':product,'qty':100,'price':10000}]}
+            order=post('orders',order_data)['id']
+            post('orders',{**order_data,'id':order,'note':'HTTP 주문 수정'})
+            post('order-status',{'id':order,'status':'confirmed'})
+            assert get('/api/orders?status=confirmed')['orders'][0]['id']==order
+            deleted_order=post('delete',{'entity':'order','id':order})['id']
+            assert get('/api/orders')['orders']==[]
+            post('trash-restore',{'id':deleted_order})
+            assert get('/api/state')['products'][0]['stock']==10
+            assert get('/api/state')['summary']['receivable']==0
+            checkpoints.append('Order create/edit/status/delete/restore leaves inventory and receivables unchanged')
             sale=post('sales',{'partner_id':partner,'day':today,'lines':[{'product_id':product,'qty':4,'price':10000}],
                                'paid':10000,'method':'cash'})['id']
             state=get('/api/state');assert state['products'][0]['stock']==6 and state['summary']['receivable']==30000
@@ -104,6 +115,9 @@ def main():
             origin,cookie=start()
             state=get('/api/state');assert state['products'][0]['stock']==8 and state['summary']['receivable']==0
             assert len(get(f'/api/sale/{sale}')['payments'])==3
+            assert get(f'/api/order/{order}')['status']=='confirmed'
+            assert get(f'/api/order/{order}')['note']=='HTTP 주문 수정'
+            checkpoints.append('Order contents and status survive backup restore and full process restart')
             checkpoints.append('Full process shutdown and restart preserve stock, sales, payments and return')
         finally:
             stop()

@@ -230,9 +230,9 @@ class Workflows(unittest.TestCase):
         finally:conn.close()
         Application(self.path,Path(__file__).resolve().parents[1]/'ui')
         conn=db.connect(self.path)
-        try:self.assertEqual(dict(conn.execute('SELECT key,value FROM meta'))['schema'],'3')
+        try:self.assertEqual(dict(conn.execute('SELECT key,value FROM meta'))['schema'],db.SCHEMA_VERSION)
         finally:conn.close()
-        self.assertTrue((self.path.parent/'backups'/'before-schema-v3.db').exists())
+        self.assertTrue(list((self.path.parent/'backups').glob('before-schema-v4-*.db')))
         self.assertEqual(self.state()['products'][0]['stock'],20)
 
     def test_sale_edit_recalculates_stock_and_preserves_history(self):
