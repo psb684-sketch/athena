@@ -1,5 +1,6 @@
 import {h,num,won,shortDay,icon,status,request,empty} from './shared.js';
 import {initForms,openForm} from './forms.js';
+import {renderOrders} from './orders.js';
 
 let data, view='home', toastTimer, renderSerial=0, filtersInitialized=false;
 const main=document.getElementById('main');
@@ -23,7 +24,7 @@ async function refresh(){
 }
 
 async function navigate(target){
- if(!['home','sales','inventory','partners','trash','settings'].includes(target))target='home';
+ if(!['home','orders','sales','inventory','partners','trash','settings'].includes(target))target='home';
  view=target;history.replaceState(null,'',`#${target}`);await render();window.scrollTo({top:0});
 }
 
@@ -34,6 +35,7 @@ async function render(){
  if(view==='home')renderHome();
  else if(view==='inventory')renderInventory();
  else if(view==='partners')renderPartners();
+ else if(view==='orders')await renderOrders(main,()=>view==='orders');
  else if(view==='sales')await renderSales();
  else if(view==='trash')renderTrash();
  else renderSettings();
@@ -109,14 +111,14 @@ function bindFilters(draw,debounce=false){
 }
 
 function renderTrash(){
- const labels={product:'품목',partner:'거래처',sale:'판매',payment:'입금',return:'반품',movement:'입출고 기록'};
+ const labels={product:'품목',partner:'거래처',sale:'판매',payment:'입금',return:'반품',movement:'입출고 기록',order:'주문'};
  main.innerHTML=head('휴지통','삭제한 기록을 복구하거나 복구할 수 없게 영구 삭제합니다.','', 'ATHENA / RECOVERY')+
  `<section class="panel"><div class="panel-head"><div><h2>삭제된 기록</h2><p>복구하면 재고·입금·미수금도 삭제 전 상태로 돌아갑니다.</p></div><span class="tag neutral">${num(data.trash.length)}건</span></div>${data.trash.length?`<div class="table-wrap"><table><thead><tr><th>삭제 시각</th><th>종류</th><th>기록</th><th>영향</th><th class="right">작업</th></tr></thead><tbody>${data.trash.map(item=>`<tr><td class="muted">${h(item.deleted_at.slice(0,19).replace('T',' '))}</td><td><span class="tag neutral">${h(labels[item.entity]||item.entity)}</span></td><td class="primary-text">${h(item.label)}</td><td class="muted break">${h(Object.entries(item.impact).map(([k,v])=>`${k} ${typeof v==='number'?num(v):v}`).join(' · '))}</td><td class="right"><div class="actions" style="justify-content:flex-end"><button class="btn small" data-form="trash-restore" data-id="${item.id}">복구</button><button class="btn small danger" data-form="trash-purge" data-id="${item.id}">영구 삭제</button></div></td></tr>`).join('')}</tbody></table></div>`:empty('휴지통이 비어 있습니다.','삭제한 기록은 이곳에서 복구할 수 있습니다.') }<div class="panel-note">영구 삭제 후에는 화면에서 복구할 수 없습니다. 삭제·복구 이력은 장부 안전을 위해 작업 기록에 남습니다.</div></section>`;
 }
 
 function renderSettings(){
  const s=data.settings;
- main.innerHTML=head('설정 및 백업','사업장 정보와 장부 보관 상태를 확인하세요.','')+`<div class="settings-grid"><div class="stack"><section class="panel"><div class="panel-head"><h2>사업장 정보</h2>${formButton('business','수정',null,'btn small','edit')}</div><div class="panel-body"><dl class="definition"><dt>사업장명</dt><dd>${h(s.business)}</dd><dt>대표 / 담당자</dt><dd>${h(s.owner||'미등록')}</dd><dt>전화</dt><dd>${h(s.phone||'미등록')}</dd><dt>주소</dt><dd>${h(s.address||'미등록')}</dd></dl><div class="info-box">여기에 입력한 정보가 거래명세서에 표시됩니다.</div></div></section><section class="panel"><div class="panel-head"><h2>아테나 PC</h2><span class="tag green">${h(data.version)}</span></div><div class="panel-body"><p style="font-size:13px">이 PC에서 인터넷 없이 실행되는 장부입니다. 화면을 닫아도 저장된 기록은 남습니다.</p><div class="info-box">품목·재고 · 거래처 · 판매·입금 · 부분 반품·환불 · 미수 원장 · 거래명세서 · CSV · 백업·복원</div><p class="muted" style="font-size:12px">저장 폴더</p><p class="path">${h(data.data_directory)}</p><p class="muted" style="font-size:11px">장부 전체를 종료하려면 실행 창에서 Ctrl+C를 누르세요.</p></div></section></div><div class="stack"><section class="panel"><div class="panel-head"><h2>장부 백업</h2>${icon('shield',20)}</div><div class="panel-body"><p class="muted" style="font-size:12px">저장할 때마다 자동 백업을 갱신하고, 최근 30개 날짜의 자료를 보관합니다.</p><a href="/api/backup" class="btn primary">${icon('download')}현재 장부 백업 내려받기</a><div class="info-box">PC 고장에도 대비하려면 내려받은 백업 파일을 USB 등 다른 저장장치에 보관하세요.</div><h3 class="section-label">보관 중인 백업</h3>${data.backups.slice(0,8).map(name=>`<div class="backup-item"><span>${h(name.startsWith('before-restore')?'복원 전 장부':name.startsWith('athena-auto')?'자동 백업 '+name.slice(12,-3):'수동 백업')}</span><a href="/api/backup-file?name=${encodeURIComponent(name)}">내려받기</a></div>`).join('')||'<p class="muted">아직 백업이 없습니다.</p>'}<div class="restore-zone"><h3 class="section-label" style="margin-top:0">백업에서 복원</h3><p class="muted" style="font-size:12px">이전 장부로 되돌리거나 다른 PC로 자료를 옮길 때 사용하세요.</p>${formButton('restore','백업 파일 선택',null,'btn','clock')}</div></div></section></div></div><section class="panel" style="margin-top:22px"><div class="panel-head"><h2>최근 작업 기록</h2><span class="muted" style="font-size:11px">최대 100건 표시</span></div>${data.audit.length?`<div class="table-wrap"><table class="compact"><thead><tr><th>시각</th><th>작업</th><th>내용</th></tr></thead><tbody>${data.audit.map(a=>`<tr><td>${h(a.created_at.slice(0,19).replace('T',' '))}</td><td>${h(a.action)}</td><td class="break">${h(a.note)}</td></tr>`).join('')}</tbody></table></div>`:empty('아직 작업 기록이 없습니다.','등록·수정·입출고·정산 내역이 여기에 남습니다.')}</section>`;
+ main.innerHTML=head('설정 및 백업','사업장 정보와 장부 보관 상태를 확인하세요.','')+`<div class="settings-grid"><div class="stack"><section class="panel"><div class="panel-head"><h2>사업장 정보</h2>${formButton('business','수정',null,'btn small','edit')}</div><div class="panel-body"><dl class="definition"><dt>사업장명</dt><dd>${h(s.business)}</dd><dt>대표 / 담당자</dt><dd>${h(s.owner||'미등록')}</dd><dt>전화</dt><dd>${h(s.phone||'미등록')}</dd><dt>주소</dt><dd>${h(s.address||'미등록')}</dd></dl><div class="info-box">여기에 입력한 정보가 거래명세서에 표시됩니다.</div></div></section><section class="panel"><div class="panel-head"><h2>아테나 PC</h2><span class="tag green">${h(data.version)}</span></div><div class="panel-body"><p style="font-size:13px">이 PC에서 인터넷 없이 실행되는 장부입니다. 화면을 닫아도 저장된 기록은 남습니다.</p><div class="info-box">품목·재고 · 거래처 · 판매·입금 · 부분 반품·환불 · 미수 원장 · 거래명세서 · CSV · 백업·복원</div><p class="muted" style="font-size:12px">저장 폴더</p><p class="path">${h(data.data_directory)}</p><p class="muted" style="font-size:11px">장부 전체를 종료하려면 실행 창에서 Ctrl+C를 누르세요.</p></div></section></div><div class="stack"><section class="panel"><div class="panel-head"><h2>장부 백업</h2>${icon('shield',20)}</div><div class="panel-body"><p class="muted" style="font-size:12px">저장할 때마다 자동 백업을 갱신하고, 최근 30개 날짜의 자료를 보관합니다.</p><a href="/api/backup" class="btn primary">${icon('download')}현재 장부 백업 내려받기</a><div class="info-box">PC 고장에도 대비하려면 내려받은 백업 파일을 USB 등 다른 저장장치에 보관하세요.</div><h3 class="section-label">보관 중인 백업</h3>${data.backups.slice(0,8).map(name=>`<div class="backup-item"><span>${h(name.startsWith('before-schema')?'업데이트 전 장부':name.startsWith('before-restore')?'복원 전 장부':name.startsWith('athena-auto')?'자동 백업 '+name.slice(12,-3):'수동 백업')}</span><a href="/api/backup-file?name=${encodeURIComponent(name)}">내려받기</a></div>`).join('')||'<p class="muted">아직 백업이 없습니다.</p>'}<div class="restore-zone"><h3 class="section-label" style="margin-top:0">백업에서 복원</h3><p class="muted" style="font-size:12px">이전 장부로 되돌리거나 다른 PC로 자료를 옮길 때 사용하세요.</p>${formButton('restore','백업 파일 선택',null,'btn','clock')}</div></div></section></div></div><section class="panel" style="margin-top:22px"><div class="panel-head"><h2>최근 작업 기록</h2><span class="muted" style="font-size:11px">최대 100건 표시</span></div>${data.audit.length?`<div class="table-wrap"><table class="compact"><thead><tr><th>시각</th><th>작업</th><th>내용</th></tr></thead><tbody>${data.audit.map(a=>`<tr><td>${h(a.created_at.slice(0,19).replace('T',' '))}</td><td>${h(a.action)}</td><td class="break">${h(a.note)}</td></tr>`).join('')}</tbody></table></div>`:empty('아직 작업 기록이 없습니다.','등록·수정·입출고·정산 내역이 여기에 남습니다.')}</section>`;
 }
 
 document.addEventListener('click',async e=>{
@@ -128,5 +130,5 @@ main.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.
 document.getElementById('refresh').addEventListener('click',async()=>{try{await refresh();toast('최신 기록을 불러왔습니다.');}catch(error){toast(error.message,true);}});
 window.addEventListener('hashchange',()=>navigate(location.hash.slice(1)));
 initForms({getState:()=>data,refresh,toast});
-view=['home','sales','inventory','partners','trash','settings'].includes(location.hash.slice(1))?location.hash.slice(1):'home';
+view=['home','orders','sales','inventory','partners','trash','settings'].includes(location.hash.slice(1))?location.hash.slice(1):'home';
 refresh().catch(error=>{main.innerHTML=empty('아테나를 열지 못했습니다.',error.message,'<button class="btn primary" id="reload">다시 연결</button>');document.getElementById('reload').addEventListener('click',()=>location.reload());});

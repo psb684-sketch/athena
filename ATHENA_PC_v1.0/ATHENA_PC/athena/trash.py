@@ -5,7 +5,7 @@ from .validation import UserError, integer, now, log
 
 ENTITY_LABELS={
     'product':'품목','partner':'거래처','sale':'판매','payment':'입금',
-    'return':'반품','movement':'입출고 기록'
+    'return':'반품','movement':'입출고 기록','order':'주문'
 }
 
 def _add(rows_to_delete, table, identifiers):
@@ -57,10 +57,15 @@ def delete_record(conn,data):
     entity=data.get('entity')
     if entity not in ENTITY_LABELS:
         raise UserError('삭제할 기록 종류를 확인해 주세요.')
-    table={'product':'products','partner':'partners','sale':'sales','payment':'payments','return':'returns','movement':'movements'}[entity]
+    table={'product':'products','partner':'partners','sale':'sales','payment':'payments','return':'returns','movement':'movements','order':'orders'}[entity]
     item=_row(conn,table,data.get('id'))
     affected=[]; impact={}
-    if entity=='product':
+    if entity=='order':
+        affected=[(table,item['id'])]
+        _add(affected,'order_lines',_ids(conn,'SELECT id FROM order_lines WHERE order_id=?',(item['id'],)))
+        label=f"{item['number']} · {item['partner_name']}"
+        impact={'안내':'주문만 숨겨집니다. 재고·매출·미수금은 변하지 않습니다.'}
+    elif entity=='product':
         affected=[(table,item['id'])];label=f"{item['sku']} · {item['name']}";impact={'안내':'품목이 목록에서 숨겨집니다.'}
     elif entity=='partner':
         affected=[(table,item['id'])];label=item['name'];impact={'안내':'거래처가 목록에서 숨겨지며 과거 장부는 유지됩니다.'}

@@ -1,3 +1,4 @@
+import {openOrderForm} from './orders.js';
 import {h,num,won,icon,status,request,methods,kinds,empty} from './shared.js';
 
 let env, dialog, content, formRevision, requestKey;
@@ -13,7 +14,7 @@ const field=(label,name,value='',type='text',extra='')=>`<div class="field"><lab
 const dates=(value=today(),name='day',label='기록 날짜')=>field(label,name,value,'date',`required min="2000-01-01" max="${today()}"`);
 const notes=(label='메모',name='note',value='',required=false)=>`<div class="field full"><label for="f-${name}">${label}</label><textarea id="f-${name}" name="${name}" maxlength="${required?300:1000}" ${required?'required':''} placeholder="${required?'사유를 입력해 주세요.':'필요한 내용만 남겨 주세요.'}">${h(value)}</textarea></div>`;
 const methodField=(value='transfer')=>`<div class="field"><label for="f-method">결제 수단</label><select id="f-method" name="method">${Object.entries(methods).map(([k,v])=>`<option value="${k}" ${k===value?'selected':''}>${v}</option>`).join('')}</select></div>`;
-const footer=label=>`<div class="dialog-footer"><span class="left">저장하면 장부에 바로 반영됩니다.</span><button class="btn" type="button" data-close>닫기</button><button class="btn primary" type="submit">${label}</button></div>`;
+const footer=(label,notice)=>`<div class="dialog-footer"><span class="left">${h(notice)}</span><button class="btn" type="button" data-close>닫기</button><button class="btn primary" type="submit">${label}</button></div>`;
 
 export function initForms(context){
  env=context; dialog=document.getElementById('dialog'); content=document.getElementById('dialog-content');
@@ -22,6 +23,7 @@ export function initForms(context){
   const btn=e.target.closest('[data-detail-action]');if(!btn)return;
   const {detailAction:action,id,partnerId}=btn.dataset;
   try {
+   if(['order','order-status','order-delete'].includes(action)){await openForm(action,Number(id));return;}
    if(action==='print'){window.open(`/statement.html?id=${Number(id)}`,'_blank','noopener');return;}
    if(action==='payment'){payment(Number(partnerId),Number(id)||null);return;}
    if(action==='return'){await returnForm(Number(id));return;}
@@ -39,10 +41,10 @@ export function initForms(context){
  dialog.addEventListener('cancel',e=>{if(content.querySelector('button[type=submit]:disabled'))e.preventDefault();});
 }
 
-function show(title,description,body,{wide=false,submit=null,action=null,build=null}={}){
+function show(title,description,body,{wide=false,submit=null,action=null,build=null,notice='저장하면 장부에 바로 반영됩니다.'}={}){
  formRevision=state().revision; requestKey=crypto.randomUUID();
  dialog.classList.toggle('wide',wide);
- content.innerHTML=`<div class="dialog-head"><div><h2>${h(title)}</h2><p>${h(description)}</p></div><button type="button" class="icon-button" data-close aria-label="창 닫기">${icon('close')}</button></div>${submit?'<form id="active-form">':''}<div class="dialog-body"><div class="form-error" role="alert"></div>${body}</div>${submit?footer(submit)+'</form>':''}`;
+ content.innerHTML=`<div class="dialog-head"><div><h2>${h(title)}</h2><p>${h(description)}</p></div><button type="button" class="icon-button" data-close aria-label="창 닫기">${icon('close')}</button></div>${submit?'<form id="active-form">':''}<div class="dialog-body"><div class="form-error" role="alert"></div>${body}</div>${submit?footer(submit,notice)+'</form>':''}`;
  if(!dialog.open)dialog.showModal();dialog.scrollTop=0;
  if(submit)content.querySelector('form').addEventListener('submit',async e=>{
   e.preventDefault();const form=e.currentTarget;const button=form.querySelector('button[type=submit]');if(button.disabled)return;
@@ -59,6 +61,7 @@ function show(title,description,body,{wide=false,submit=null,action=null,build=n
 }
 
 export async function openForm(name,id=null){
+ if(['order','order-detail','order-status','order-delete'].includes(name))return openOrderForm(name,id,{state,show,content});
  if(name==='sale')return saleForm();
  if(name==='product')return productForm(id);
  if(name==='partner')return partnerForm(id);

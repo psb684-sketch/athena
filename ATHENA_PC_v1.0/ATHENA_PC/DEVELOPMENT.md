@@ -9,7 +9,8 @@ The only network listener binds to 127.0.0.1. Never expose this server to the in
 | Module | Responsibility |
 |---|---|
 | run.py | Windows-compatible startup, data directory, one-process lock, browser launch |
-| athena/db.py | Schema v1, connection policy, transaction boundaries, reusable sale read model |
+| athena/db.py | Schema v4, backed-up v1/v2/v3 migration, connection policy, transaction boundaries, reusable sale read model |
+| athena/orders.py | Manual order inbox, order snapshots, status changes, audit history; no ledger effects |
 | athena/validation.py | Input ranges, dates, text, existing references, movement totals |
 | athena/catalog.py | Products, customers, receipts, stock corrections, archiving, settings |
 | athena/ledger.py | Atomic sales, oldest-first receipts, returns, refunds, receipt corrections |
@@ -21,6 +22,7 @@ The only network listener binds to 127.0.0.1. Never expose this server to the in
 | athena/demo.py | Explicitly separate fictional demo seed |
 | ui/app.js | Navigation, dashboard, tables, filters, pagination |
 | ui/forms.js | Input dialogs, detail views, statement and restore flows |
+| ui/orders.js | Order list/search/status filter/pagination, order forms and detail dialogs |
 | ui/shared.js | Formatting, escaping, icons, request error handling |
 | ui/statement.js | Printable current settlement statement with original line snapshots |
 
