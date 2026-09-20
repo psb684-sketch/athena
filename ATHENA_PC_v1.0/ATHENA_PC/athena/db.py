@@ -1,9 +1,30 @@
 """SQLite schema, connections, and transaction boundaries. No external packages."""
 import sqlite3
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 from pathlib import Path
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
+ORDER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS orders (
+ id INTEGER PRIMARY KEY, number TEXT NOT NULL UNIQUE,
+ partner_id INTEGER NOT NULL REFERENCES partners(id), partner_name TEXT NOT NULL,
+ day TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending'
+ CHECK(status IN ('pending','confirmed','completed','cancelled')),
+ total INTEGER NOT NULL CHECK(typeof(total)='integer' AND total BETWEEN 0 AND 1000000000000),
+ note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS order_lines (
+ id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id),
+ product_id INTEGER NOT NULL REFERENCES products(id), product_name TEXT NOT NULL,
+ spec TEXT NOT NULL, unit TEXT NOT NULL,
+ qty INTEGER NOT NULL CHECK(typeof(qty)='integer' AND qty BETWEEN 1 AND 1000000),
+ price INTEGER NOT NULL CHECK(typeof(price)='integer' AND price BETWEEN 0 AND 1000000000),
+ UNIQUE(order_id,product_id)
+);
+CREATE INDEX IF NOT EXISTS idx_orders_status_day ON orders(status,day);
+CREATE INDEX IF NOT EXISTS idx_order_lines_order ON order_lines(order_id);
+"""
+
 TRASH_SCHEMA = """
 CREATE TABLE IF NOT EXISTS trash (
  id INTEGER PRIMARY KEY, entity TEXT NOT NULL, entity_id INTEGER NOT NULL,
@@ -89,9 +110,9 @@ CREATE INDEX IF NOT EXISTS idx_payments_sale ON payments(sale_id);
 CREATE INDEX IF NOT EXISTS idx_returns_sale ON returns(sale_id);
 CREATE INDEX IF NOT EXISTS idx_lines_sale ON sale_lines(sale_id);
 CREATE INDEX IF NOT EXISTS idx_return_lines_sale ON return_lines(sale_line_id);
-""" + TRASH_SCHEMA + HISTORY_SCHEMA + """
+""" + TRASH_SCHEMA + HISTORY_SCHEMA + ORDER_SCHEMA + """
 """
-TABLES = ('meta','products','partners','sales','sale_lines','returns','return_lines','payments','movements','audit','requests','trash','trash_rows','edit_history')
+TABLES = ('meta','products','partners','sales','sale_lines','returns','return_lines','payments','movements','audit','requests','trash','trash_rows','edit_history','orders','order_lines')
 
 def connect(path):
     conn = sqlite3.connect(str(path), timeout=15, isolation_level=None)
@@ -103,26 +124,30 @@ def connect(path):
 
 def initialize(path):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with connect(path) as conn:
+    with closing(connect(path)) as conn:
         # Never silently migrate a database belonging to another application/version.
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if tables:
             if 'meta' not in tables:
                 raise ValueError('아테나 데이터 파일이 아닙니다.')
             meta = dict(conn.execute('SELECT key,value FROM meta'))
-            if meta.get('app') != 'ATHENA_PC' or meta.get('schema') not in ('1','2',SCHEMA_VERSION):
+            if meta.get('app') != 'ATHENA_PC' or meta.get('schema') not in ('1','2','3',SCHEMA_VERSION):
                 raise ValueError('지원하지 않는 데이터 버전입니다. 기존 파일을 보존했습니다.')
-            if meta.get('schema') == '1':
-                conn.executescript(TRASH_SCHEMA)
-                conn.execute("UPDATE meta SET value='2' WHERE key='schema'")
-                meta['schema']='2'
-            if meta.get('schema') == '2':
-                conn.executescript(HISTORY_SCHEMA)
-                conn.execute("UPDATE meta SET value=? WHERE key='schema'",(SCHEMA_VERSION,))
+            if meta.get('schema') != SCHEMA_VERSION:
+                # Preserve the original before any DDL, including direct initialize calls.
+                from datetime import datetime
+                from .backup import snapshot
+                target = Path(path).parent/'backups'/f'before-schema-v4-{datetime.now().strftime("%Y%m%d-%H%M%S-%f")}.db'
+                snapshot(path, target)
+                try:
+                    conn.executescript("BEGIN IMMEDIATE;\n" + TRASH_SCHEMA + HISTORY_SCHEMA + ORDER_SCHEMA +
+                                       "UPDATE meta SET value='4' WHERE key='schema';\nCOMMIT;")
+                except BaseException:
+                    conn.rollback()
+                    raise
         conn.executescript(SCHEMA)
         for key, value in [('app','ATHENA_PC'),('schema',SCHEMA_VERSION),('revision','0'),('business','우리 사업장'),('owner',''),('phone',''),('address','')]:
             conn.execute('INSERT OR IGNORE INTO meta VALUES (?,?)', (key,value))
-    conn.close()
 
 @contextmanager
 def transaction(path):

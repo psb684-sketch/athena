@@ -1,6 +1,17 @@
 # ATHENA PC 1.0 — verification record
 
-Latest verification environment: Windows, Python 3.14, Node.js syntax checking.
+## Order inbox v1 — 2026-09-18
+
+Windows / Python 3.12: all **32** tests passed (21 existing regressions + 11 order tests).
+The actual launcher HTTP integration passed all 10 checkpoints, including orders, accounting,
+backup/restore and full process restart. Node syntax checks passed for app/forms/orders modules.
+Browser checks in a separate demo database passed create, multi-line edit, detail, status/filter,
+delete/restore and escaped HTML rendering; no browser console errors were observed.
+See [ORDER_INBOX.md](ORDER_INBOX.md) for commands, coverage, design and migration compatibility.
+
+## Previous verification record
+
+Previous verification environment: Windows, Python 3.14, Node.js syntax checking.
 The intended user environment is Windows with Python 3.10+ and Edge/Chrome.
 
 ## Passed: 21 automated business and security tests

@@ -9,7 +9,7 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
-from . import VERSION, db, catalog, ledger, reports, backup, trash, editing
+from . import VERSION, db, catalog, ledger, reports, backup, trash, editing, orders
 from .validation import UserError, integer, string
 
 MAX_BODY=50*1024*1024
@@ -18,8 +18,9 @@ ACTIONS={'products':catalog.save_product,'partners':catalog.save_partner,'stock'
          'payment-correction':ledger.reverse_payment,'archive':catalog.archive,'settings':catalog.settings,
          'delete':trash.delete_record,'trash-restore':trash.restore_record,'trash-purge':trash.purge_record,
          'sale-edit':editing.edit_sale,'payment-edit':editing.edit_payment,
-         'return-edit':editing.edit_return,'movement-edit':editing.edit_movement}
-STATIC={'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),
+         'return-edit':editing.edit_return,'movement-edit':editing.edit_movement,
+         'orders':orders.save_order,'order-status':orders.change_status}
+STATIC={'/orders.js':('orders.js','text/javascript; charset=utf-8'),'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),
         '/forms.js':('forms.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8'),
         '/shared.js':('shared.js','text/javascript; charset=utf-8'),'/statement.html':('statement.html','text/html; charset=utf-8'),
         '/statement.js':('statement.js','text/javascript; charset=utf-8'),'/favicon.svg':('favicon.svg','image/svg+xml')}
@@ -33,19 +34,6 @@ class Application:
         self.csrf=secrets.token_urlsafe(32)
         self.lock=threading.RLock()
         self.backup_warning=''
-        # Preserve the exact v1 file before adding the reversible-trash schema.
-        if self.path.exists() and self.path.stat().st_size:
-            check=None;needs_migration_backup=False
-            try:
-                check=sqlite3.connect(str(self.path))
-                meta=dict(check.execute('SELECT key,value FROM meta'))
-                needs_migration_backup=meta.get('app')=='ATHENA_PC' and meta.get('schema') in ('1','2')
-            except sqlite3.Error:
-                pass
-            finally:
-                if check:check.close()
-            if needs_migration_backup:
-                backup.snapshot(self.path,self.path.parent/'backups'/'before-schema-v3.db')
         db.initialize(path)
         self.auto_backup()
 
@@ -161,6 +149,8 @@ class Handler(BaseHTTPRequestHandler):
                         data.update({'csrf':app.csrf,'demo':app.demo,'version':VERSION,'backup_warning':app.backup_warning,
                             'data_directory':str(app.path.parent),'backup_latest':snapshots[0].name if snapshots else '',
                             'backups':[p.name for p in snapshots],'trash':trash.list_trash(conn)})
+                    elif path=='/api/orders': data=orders.list_orders(conn,params)
+                    elif path.startswith('/api/order/'): data=orders.detail(conn,path.rsplit('/',1)[-1])
                     elif path=='/api/sales': data=reports.sales_list(conn,params)
                     elif path.startswith('/api/sale/'): data=reports.sale_detail(conn,path.rsplit('/',1)[-1])
                     elif path.startswith('/api/return/'): data=reports.return_detail(conn,path.rsplit('/',1)[-1])
